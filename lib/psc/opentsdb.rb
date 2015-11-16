@@ -29,17 +29,130 @@ require 'httparty'
         return response.parsed_response
       end
 
-      def create_metric(metric)
-        data = Hash.new
-        data['metric'] = [metric]
-        response = self.class.post('/api/uid/assign',body: data.to_json)
-        puts '***'
-        puts response.parsed_response.to_s
-        if response.code == 400
-          raise MetricCreationError , metric + " could not be created. " + response.parsed_response['metric_errors'][metric].to_s
+      # return array of aggregators
+      def aggregators
+        do_get('/api/aggregators')
+      end
+
+      # return hash with version info
+      def version
+        do_get('/api/version')
+      end
+
+      # return hash with config info
+      def config
+        do_get('/api/config')
+      end
+
+      def config_filters
+        do_get('/api/config/filters')
+      end
+
+      def stats
+        do_get('/api/stats')
+      end
+
+      def stats_threads
+        do_get('/api/stats/threads')
+      end
+
+      def stats_jvm
+        do_get('/api/stats/jvm')
+      end
+
+      def stats_region_clients
+        do_get('/api/stats/region_clients')
+      end
+
+      def serializers
+        do_get('/api/serializers')
+      end
+
+      def s(file_path)
+        begin
+          response = self.class.get("/s/#{file_path}")
+        rescue StandardError => e
+          raise OpenTsdbError, "Error contacting OpenTSDB server"
+        end
+
+        if response.code == 404
+          raise OpenTsdbError, "File not found"
           return
         elsif response.code != 200
-          raise MetricCreationError , metric + " could not be created.  Unknown Error"
+          raise OpenTsdbError, "File could not be retrieved.  Unknown Error."
+          return
+        end
+
+        response.parsed_response
+      end
+
+      def drop_caches
+        begin
+          response = self.class.post('/api/dropcaches')
+        rescue StandardError => e
+          raise OpenTsdbError, "Error contacting OpenTSDB server"
+        end
+        if response.code != 200
+          raise OpenTsdbError, "Cache could not be dropped.  " + response.parsed_response['status'] + ": " + response.parsed_response['message']
+        end
+        response
+      end
+
+      def create(type,name)
+        #type must be one of metric, tagk (tag name), tagv (tag value)
+        valid_types = ['metric','tagk','tagv']
+        unless valid_types.include?(type)
+          raise CreationError, type + " is not a valid type for the create method"
+          return
+        end
+
+        if name.empty?
+          raise CreationError, name.to_s + " is not a valid value for the create method"
+          return
+        end
+
+        data = Hash.new
+        data[type] = [name]
+        begin
+          response = self.class.post('/api/uid/assign',body: data.to_json)
+        rescue StandardError => e
+          raise OpenTsdbError, "Couldn't create #{type} name #{name}.  Error contacting OpenTSDB server"
+          return
+        end
+        response
+      end
+
+      def create_metric(metric)
+        response = create('metric',metric)
+        if response.code == 400
+          raise CreationError , metric + " could not be created. " + response.parsed_response['metric_errors'][metric].to_s
+          return
+        elsif response.code != 200
+          raise CreationError , metric + " could not be created.  Unknown Error"
+          return
+        end
+        response
+      end
+
+      def create_tag_name(tagk)
+        response = create('tagk',tagk)
+        if response.code == 400
+          raise CreationError , tagk + " could not be created. " + response.parsed_response['tagk_errors'][tagk].to_s
+          return
+        elsif response.code != 200
+          raise CreationError , tagk + " could not be created.  Unknown Error"
+          return
+        end
+        response
+      end
+
+      def create_tag_value(tagv)
+        response = create('tagv',tagv)
+        if response.code == 400
+          raise CreationError , tagv + " could not be created. " + response.parsed_response['tagv_errors'][tagk].to_s
+          return
+        elsif response.code != 200
+          raise CreationError , tagv + " could not be created.  Unknown Error"
           return
         end
         response
@@ -53,6 +166,17 @@ require 'httparty'
         end
         response = self.class.post('/api/put', body: data.to_json)
 
+      end
+
+      protected
+
+      def do_get(end_point)
+        begin
+          response = self.class.get(end_point)
+        rescue StandardError => e
+          raise OpenTsdbError, "Error contacting OpenTSDB server"
+        end
+        response.parsed_response
       end
     end
 
@@ -88,10 +212,11 @@ require 'httparty'
       end
     end
 
-    class MetricCreationError < StandardError
-      def initialize(message)
-        super(message)
-      end
+    class OpenTsdbError < StandardError
     end
+
+    class CreationError < OpenTsdbError
+    end
+
   end
 
