@@ -33,7 +33,16 @@ require 'httparty'
         data = Hash.new
         data['metric'] = [metric]
         response = self.class.post('/api/uid/assign',body: data.to_json)
-
+        puts '***'
+        puts response.parsed_response.to_s
+        if response.code == 400
+          raise MetricCreationError , metric + " could not be created. " + response.parsed_response['metric_errors'][metric].to_s
+          return
+        elsif response.code != 200
+          raise MetricCreationError , metric + " could not be created.  Unknown Error"
+          return
+        end
+        response
       end
 
       def put(data_points)
@@ -43,6 +52,7 @@ require 'httparty'
           data.push(dp.to_hash)
         end
         response = self.class.post('/api/put', body: data.to_json)
+
       end
     end
 
@@ -75,6 +85,12 @@ require 'httparty'
       def initialize(tag_name,tag_value)
         @tag_name = tag_name
         @tag_value = tag_value
+      end
+    end
+
+    class MetricCreationError < StandardError
+      def initialize(message)
+        super(message)
       end
     end
   end
